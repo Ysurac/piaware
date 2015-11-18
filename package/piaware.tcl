@@ -202,7 +202,10 @@ proc test_port_callback {timer sock status callback} {
 #
 proc process_netstat_socket_line {line} {
     lassign $line proto recvq sendq localAddress foreignAddress state pidProg
-    lassign [split $pidProg "/"] pid prog
+    lassign [split $pidProg "/"] pid prog prog2
+    if {$prog == "."} {
+		set prog $prog2
+    }
 
     if {[string match "*:30005" $localAddress] && $state == "LISTEN"} {
 		set ::netstatus(program_30005) $prog

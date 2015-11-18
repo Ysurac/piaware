@@ -96,8 +96,10 @@ proc connect_adsb_via_faup1090 {} {
 	set args $::faup1090Path
 	lappend args "--net-bo-ipaddr" "localhost" "--net-bo-port" "30005" "--stdout"
 	if {$::receiverLat ne "" && $::receiverLon ne ""} {
-		lappend args "--lat" [format "%.3f" $::receiverLat] "--lon" [format "%.3f" $::receiverLon]
+		lappend args "--lat" [format "%.5f" $::receiverLat] "--lon" [format "%.5f" $::receiverLon]
 	}
+
+	lappend args "--max-range" "1000"
 
 	logger "Starting faup1090: $args"
 	if {[catch {set ::faupPipe [open |$args]} catchResult] == 1} {
@@ -177,7 +179,7 @@ proc faup1090_data_available {} {
 		log_locally "piaware received a message from $::adsbDataProgram!"
 	}
 
-    #puts "faup1090 data: $line"
+	puts "faup1090 data: $line"
 	# if logged into flightaware adept, send the data
 	send_if_logged_in $line
 	set ::lastFaupMessageClock [clock seconds]

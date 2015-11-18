@@ -3,9 +3,9 @@
 # fa_adept_client - Itcl class for connecting to and communicating with
 #  an Open Aviation Data Exchange Protocol service
 #
+# Copyright (C) 2015 Ycarus (Yannick Chabanois) from Zugaina
 # Copyright (C) 2014 FlightAware LLC, All Rights Reserved
 #
-# open source in accordance with the Berkeley license
 #
 
 package require tls
@@ -90,7 +90,7 @@ namespace eval ::fa_adept {
 		# if we succeed to connect and login, we'll cancel this
 		set connectTimerID [after [expr {round(($connectRetryIntervalSeconds * (1 + rand())) * 1000)}] $this connect]
 
-		log_locally "connecting to FlightAware $host/$port"
+		log_locally "connecting to server $host/$port"
 
 		# attempt to connect with TLS negotiation.  Use the included
 		# CA cert file to confirm the cert's signature on the certificate
@@ -132,7 +132,7 @@ namespace eval ::fa_adept {
 		# in the session key (sbits) and the cipher used, such
 		# as DHE-RSA-AES256-SHA
 		#logger "TLS local status: [::tls::status -local $sock]"
-		log_locally "encrypted session established with FlightAware"
+		log_locally "encrypted session established with server"
 
 		# configure the socket nonblocking full-buffered and
 		# schedule this object's server_data_available method
@@ -142,6 +142,7 @@ namespace eval ::fa_adept {
 		# promptly
 
 		fconfigure $sock -buffering full -buffersize 4096 -blocking 0 -translation binary
+		#fconfigure $sock -buffering line -buffersize 4096 -blocking 0 -translation binary
 		fileevent $sock readable [list $this server_data_available]
 		set connected 1
 		set flushPending 0
@@ -162,7 +163,7 @@ namespace eval ::fa_adept {
         upvar $_reason reason
 
 		array set status $statusList
-
+		set domain $host
 		# require expected fields
 		foreach field "subject issuer notBefore notAfter" {
 			if {![info exists status($field)]} {
@@ -190,7 +191,7 @@ namespace eval ::fa_adept {
 		# crack fields in the certificate and require some of them to be present
 		crack_certificate_fields $status(subject) subject
 		#parray subject
-		foreach field "CN O L ST C" {
+		foreach field "CN" {
 			if {![info exists subject($field)]} {
 				set reason "required subject field '$field' is missing"
 				return 0
@@ -201,7 +202,7 @@ namespace eval ::fa_adept {
 		# present
 		crack_certificate_fields $status(issuer) issuer
 		#parray issuer
-		foreach field "CN OU O C" {
+		foreach field "CN" {
 			if {![info exists issuer($field)]} {
 				set reason "required issuer field '$field' is missing"
 				return 0
@@ -209,29 +210,12 @@ namespace eval ::fa_adept {
 		}
 
 		# validate the common name
-		if {$subject(CN) != "*.flightaware.com"} {
-			set reason "subject CN is not '*.flightaware.com"
+		if {$subject(CN) != $host && $subject(CN) != "*.flightaware.com" && $subject(CN) != "*.'[join [lrange [split $domain "."] [llength [split $domain "."]]-2 [llength [split $domain "."]]-1 ] "."]'"} {
+			set reason "subject CN is not '$host' it is '$subject(CN)'"
 			return 0
 		}
 
-		# validate the organization
-		if {$subject(O) != "FlightAware LLC"} {
-			set reason "subject O is not 'FlightAware LLC'"
-			return 0
-		}
-
-		# validate the state
-		if {$subject(ST) != "Texas"} {
-			set reason "subject ST is not 'Texas'"
-		}
-
-		# validate the country
-		if {$subject(C) != "US"} {
-			set reason "subject C is not 'US'"
-			return 0
-		}
-
-		log_locally "FlightAware server SSL certificate validated"
+		log_locally "Server SSL certificate validated"
 		return 1
     }
 
@@ -258,7 +242,7 @@ namespace eval ::fa_adept {
 		# if end of file on the socket, close the socket and attempt to reopen
 		if {[eof $sock]} {
 			reap_any_dead_children
-			log_locally "lost connection to FlightAware, reconnecting..."
+			log_locally "lost connection to server, reconnecting..."
 			close_socket_and_reopen
 			return
 		}
@@ -266,7 +250,7 @@ namespace eval ::fa_adept {
 		# get a line of data from the socket.  if we get an error, close the
 		# socket and attempt to reopen
 		if {[catch {set size [gets $sock line]} catchResult] == 1} {
-			log_locally "got '$catchResult' reading FlightAware socket, reconnecting... "
+			log_locally "got '$catchResult' reading server socket, reconnecting... "
 			close_socket_and_reopen
 			return
 		}
@@ -308,6 +292,7 @@ namespace eval ::fa_adept {
 
 		switch -glob $row(type) {
 			"login_response" {
+				log_locally "Login response !!!"
 				handle_login_response_message row
 			}
 
@@ -377,14 +362,14 @@ namespace eval ::fa_adept {
 				update_location $row(recv_lat) $row(recv_lon)
 			}
 
-			log_locally "logged in to FlightAware as user $::flightaware_user"
+			log_locally "logged in to server as user $::flightaware_user"
 			cancel_connect_timer
 		} else {
 			# NB do more here, like UI stuff
 			log_locally "*******************************************"
 			log_locally "LOGIN FAILED: status '$row(status)': reason '$row(reason)'"
 			log_locally "please correct this, possibly using piaware-config"
-			log_locally "to set valid Flightaware user name and password."
+			log_locally "to set valid server user name and password."
 			log_locally "piaware will now exit."
 			log_locally "You can start it up again using 'sudo /etc/init.d/piaware start'"
 			exit 4
@@ -629,7 +614,7 @@ namespace eval ::fa_adept {
 	#  it goes off
 	#
 	method alive_timeout {} {
-		log_locally "timed out waiting for alive message from FlightAware, reconnecting..."
+		log_locally "timed out waiting for alive message from server, reconnecting..."
 		close_socket_and_reopen
 	}
 
@@ -821,9 +806,8 @@ namespace eval ::fa_adept {
 		if {$showTraffic} {
 			puts "> $text"
 		}
-
 		if {[catch {puts $sock $text} catchResult] == 1} {
-			log_locally "got '$catchResult' writing to FlightAware socket, reconnecting..."
+			log_locally "got '$catchResult' writing to server socket, reconnecting..."
 			close_socket_and_reopen
 			return
 		}
@@ -839,7 +823,7 @@ namespace eval ::fa_adept {
 		set flushPending 0
 		if {[info exists sock]} {
 			if {[catch {flush $sock} catchResult] == 1} {
-				log_locally "got '$catchResult' writing to FlightAware socket, reconnecting..."
+				log_locally "got '$catchResult' writing to server socket, reconnecting..."
 				close_socket_and_reopen
 				return
 			}
@@ -861,7 +845,7 @@ namespace eval ::fa_adept {
 			set row(clock) [clock seconds]
 		}
 
-		if {$loggedIn} {
+		if {$loggedIn && $host == "piaware.flightaware.com"} {
 			compress_array row
 		}
 
@@ -984,7 +968,7 @@ namespace eval ::fa_adept {
 		}
 
 		if {!$state} {
-			log_locally "data isn't making it to FlightAware, reconnecting..."
+			log_locally "data isn't making it to server, reconnecting..."
 			close_socket_and_reopen
 		}
 	}

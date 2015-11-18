@@ -8,12 +8,15 @@
 set ::mlatEnabled 0
 # is our client ready for data?
 set ::mlatReady 0
+
+set ::mlatProtocol tcp
 # interval between client restarts
 set ::mlatRestartMillis 60000
 # UDP transport info
 set ::mlatUdpTransport {}
 # path to fa-mlat-client
 set ::mlatClientPath [auto_execok "/usr/lib/piaware/helpers/fa-mlat-client"]
+set ::mlatFAClientPath [auto_execok "/usr/lib/piaware/helpers/fam-mlat-client"]
 
 proc mlat_is_configured {} {
 	if {[info exists ::adeptConfig(mlat)]} {
@@ -29,7 +32,11 @@ proc mlat_is_configured {} {
 	}
 
 	# check for existence of fa-mlat-client
-	if {$::mlatClientPath eq ""} {
+	if {$::mlatClientPath eq "" && $::mlatProtocol == "udp"} {
+		logger "multilateration support disabled (no fa-mlat-client found)"
+		return 0
+	}
+	if {$::mlatFAClientPath eq "" && $::mlatProtocol == "tcp"} {
 		logger "multilateration support disabled (no fa-mlat-client found)"
 		return 0
 	}
@@ -106,12 +113,16 @@ proc start_mlat_client {} {
 		return
 	}
 
-	set command $::mlatClientPath
+	if { $::mlatProtocol == "tcp" } {
+		set command $::mlatFAClientPath
+	} else {
+		set command $::mlatClientPath
+	}
 	lappend command "--input-connect" "localhost:30005"
 
 	if {![info exists ::adeptConfig(mlatResults)] || ([string is boolean $::adeptConfig(mlatResults)] && $::adeptConfig(mlatResults))} {
 		if {![info exists ::adeptConfig(mlatResultsFormat)] || $::adeptConfig(mlatResultsFormat) eq "default"} {
-			lappend command "--results" "beast,connect,localhost:30104"
+			lappend command "--results" "beast,connect,localhost:30004"
 		} else {
 			foreach r $::adeptConfig(mlatResultsFormat) {
 				lappend command "--results" $r
@@ -121,7 +132,16 @@ proc start_mlat_client {} {
 
 	if {$::mlatUdpTransport ne ""} {
 		lassign $::mlatUdpTransport udp_host udp_port udp_key
-		lappend command "--udp-transport" "$udp_host:$udp_port:$udp_key"
+		if { $::mlatProtocol == "tcp" } {
+			lappend command "--server" "$udp_host:$udp_port"
+			lappend command "--key" "$udp_key"
+			lappend command "--lat" "$::receiverLat"
+			lappend command "--lon" "$::receiverLon"
+			lappend command "--alt" "200"
+			lappend command "--user" "$::adeptConfig(user)"
+		} else {
+			lappend command "--udp-transport" "$udp_host:$udp_port:$udp_key"
+		}
 	}
 
 	logger "Starting multilateration client: $command"
