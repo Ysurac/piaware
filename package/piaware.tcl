@@ -20,7 +20,19 @@ proc open_nolocale {cmd {mode r}} {
 	array unset ::env LANG
 	array unset ::env LC_*
 	catch {open $cmd $mode} result options
-	array set ::env $oldenv
+
+	# work around http://core.tcl.tk/tcl/info/bc1a96407a
+	# (::env is internally a traced variable, so trying to
+	# "array set ::env" will trigger the bug)
+	#
+	# this bug is not present in 8.5 (Raspbian wheezy),
+	# and was fixed in 8.6.3, but Raspbian jessie has 8.6.2.
+
+	#array set ::env $oldenv
+	foreach {k v} $oldenv {
+		set ::env($k) $v
+	}
+
 	return -options $options $result
 }
 
@@ -381,6 +393,23 @@ proc get_default_gateway_interface_and_ip {_gateway _iface _ip} {
 	}
     close $fp
     return 0
+}
+
+#
+# get_os_release - parse /etc/os-release and populate an array
+#
+proc get_os_release {_out} {
+	upvar $_out out
+
+	set f [open "/etc/os-release" "r"]
+	while {[gets $f line] >= 0} {
+		if {[regexp {^\s*([A-Za-z_]+)="(.+)"} $line -> key value]} {
+			set out($key) $value
+		} elseif {[regexp {^\s*([A-Za-z_]+)=(\S+)} $line -> key value]} {
+			set out($key) $value
+		}
+	}
+	close $f
 }
 
 #
