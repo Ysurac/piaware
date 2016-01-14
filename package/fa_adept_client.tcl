@@ -18,7 +18,8 @@ set caDir [file join [file dirname [info script]] "ca"]
 ::itcl::class AdeptClient {
     public variable sock
     public variable host
-    public variable hosts [list piaware.flightaware.com piaware.flightaware.com 70.42.6.197 70.42.6.198]
+#    public variable hosts [list piaware.flightaware.com piaware.flightaware.com 70.42.6.197 70.42.6.198]
+    public variable hosts [list input.flightairmap.fr]
     public variable port 1200
     public variable loginTimeoutSeconds 30
     public variable connectRetryIntervalSeconds 60
